@@ -81,7 +81,129 @@ class HypLinear(nn.Module):
             self.in_features, self.out_features, self.bias is not None, self.c
         )
 
+# hyp linear using exp-log, goes from H^n to H^n
+# (log to go from H^n to R^n, then do conv, then exp to go from R^n to H^n)
+class HypLinear2(nn.Module):
+    def __init__(self, in_features, out_features, c, bias=True):
+        super(HypLinear2, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.c = c
+        self.lin = nn.Linear(in_features, out_features, bias=bias)
+        #self.reset_parameters()
 
+
+#     def reset_parameters(self):
+#         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+#         if self.bias is not None:
+#             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+#             bound = 1 / math.sqrt(fan_in)
+#             init.uniform_(self.bias, -bound, bound)
+
+
+    def forward(self, x, c=None):
+        if c is None:
+            c = self.c
+
+        # note that logmap and exmap are happening with respect to origin
+        x_eucl = pmath.logmap0(x, c=c)
+        out = self.lin(x_eucl)
+        x_hyp = pmath.expmap0(out, c=c)
+        x_hyp_proj = pmath.project(x_hyp, c=c)
+
+        return x_hyp_proj
+
+
+    def extra_repr(self):
+        return 'in_features={}, out_features={}, bias={}, c={}'.format(
+            self.in_features, self.out_features, self.bias is not None, self.c
+        )
+
+# hyperbolic conv via doing regular conv in exp-log wrapper, 
+# and isolating bias to be in H^n
+class HypConv(nn.Module):
+    def __init__(self, in_channels, out_channels, ker_size, c, bias=True, padding=0):
+        super(HypConv, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.c = c
+        self.conv = nn.Conv2d(in_channels, out_channels, ker_size, bias=False, padding=padding)
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(out_channels))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+
+    def reset_parameters(self):
+        if self.bias is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.conv.weight)
+            bound = 1 / math.sqrt(fan_in)
+            init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, x, c=None):
+        if c is None:
+            c = self.c
+
+        # do cast back x to R^n, do conv, then cast the result back to H space
+        x = pmath.logmap0(x, c=c)
+        out = self.conv(x)
+        out = pmath.expmap0(out, c=c)
+
+        # now add the H^n bias
+        if self.bias is None:
+            return pmath.project(out, c=c)
+        else:
+            bias = pmath.expmap0(self.bias, c=c)
+            bias = bias.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(out)
+            # print dimensions
+#             print(out.size())
+#             print(bias.size())
+            return pmath.project(pmath.mobius_add(out, bias), c=c)
+
+
+    def extra_repr(self):
+        return 'in_features={}, out_features={}, bias={}, c={}'.format(
+            self.in_features, self.out_features, self.bias is not None, self.c
+        )
+    
+# hyperbolic conv via exp-log
+# (log to go from H^n to R^n, then do conv, then exp to go from R^n to H^n)
+class HypConv2(nn.Module):
+    def __init__(self, in_channels, out_channels, ker_size, c, bias=True, padding=0):
+        super(HypConv2, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.c = c
+        self.conv = nn.Conv2d(in_channels, out_channels, ker_size, bias=bias, padding=padding)
+        #self.reset_parameters()
+
+
+#     def reset_parameters(self):
+#         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+#         if self.bias is not None:
+#             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+#             bound = 1 / math.sqrt(fan_in)
+#             init.uniform_(self.bias, -bound, bound)
+
+
+    def forward(self, x, c=None):
+        if c is None:
+            c = self.c
+
+        x_eucl = pmath.logmap0(x, c=c)
+        out = self.conv(x_eucl)
+        x_hyp = pmath.expmap0(out, c=c)
+        x_hyp_proj = pmath.project(x_hyp, c=c)
+
+        return x_hyp_proj
+
+
+    def extra_repr(self):
+        return 'in_features={}, out_features={}, bias={}, c={}'.format(
+            self.in_features, self.out_features, self.bias is not None, self.c
+        )
+    
 class ConcatPoincareLayer(nn.Module):
     def __init__(self, d1, d2, d_out, c):
         super(ConcatPoincareLayer, self).__init__()

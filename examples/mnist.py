@@ -11,9 +11,28 @@ from torchvision import datasets, transforms
 import hyptorch.nn as hypnn
 
 
-class Net(nn.Module):
+class NetRegular(nn.Module):
     def __init__(self, args):
-        super(Net, self).__init__()
+        super(NetRegular, self).__init__()
+        self.conv1 = nn.Conv2d(1, 20, 5, 1)
+        self.conv2 = nn.Conv2d(20, 50, 5, 1)
+        self.fc1 = nn.Linear(4 * 4 * 50, 500)
+        self.fc2 = nn.Linear(500, 10)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(-1, 4 * 4 * 50)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=-1)
+
+
+class NetKhrulkov(nn.Module):
+    def __init__(self, args):
+        super(NetKhrulkov, self).__init__()
         self.conv1 = nn.Conv2d(1, 20, 5, 1)
         self.conv2 = nn.Conv2d(20, 50, 5, 1)
         self.fc1 = nn.Linear(4 * 4 * 50, 500)
@@ -35,6 +54,56 @@ class Net(nn.Module):
         x = self.tp(x)
         return F.log_softmax(self.mlr(x, c=self.tp.c), dim=-1)
 
+# separates out biases and matrices (except for conv, not a matrix yet)
+# to get benefits of hyperbolic representation
+class NetHypConv(nn.Module):
+    def __init__(self, args):
+        super(NetHypConv, self).__init__()
+        self.tp = hypnn.ToPoincare(c=args.c,
+                                   train_x=args.train_x,
+                                   train_c=args.train_c,
+                                   ball_dim=args.dim)
+        self.conv1 = hypnn.HypConv(1, 20, 5, c=args.c) # input: 28 x 28, output: 20 x 24 x 24 (pool 2x2 after)
+        self.conv2 = hypnn.HypConv(20, 50, 5, c=args.c) # input: 20 x 12 x 12, output: 50 x 8 x 8 (pool 2x2 after)
+        self.fc1 = hypnn.HypLinear(4 * 4 * 50, 500, c=args.c) # input: 50 x 4 x 4, output: 500
+        self.fc2 = hypnn.HypLinear(500, args.dim, c=args.c)
+        self.mlr = hypnn.HyperbolicMLR(ball_dim=args.dim, n_classes=10, c=args.c)
+
+    def forward(self, x):
+        x = self.tp(x)
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(-1, 4 * 4 * 50)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(self.mlr(x, c=self.tp.c), dim=-1)
+
+# just wraps typical pytorch layers in exp-log maps
+class NetHypConv2(nn.Module):
+    def __init__(self, args):
+        super(NetHypConv2, self).__init__()
+        self.tp = hypnn.ToPoincare(c=args.c,
+                                   train_x=args.train_x,
+                                   train_c=args.train_c,
+                                   ball_dim=args.dim)
+        self.conv1 = hypnn.HypConv2(1, 20, 5, c=args.c)
+        self.conv2 = hypnn.HypConv2(20, 50, 5, c=args.c)
+        self.fc1 = hypnn.HypLinear2(4 * 4 * 50, 500, c=args.c)
+        self.fc2 = hypnn.HypLinear2(500, args.dim, c=args.c)
+        self.mlr = hypnn.HyperbolicMLR(ball_dim=args.dim, n_classes=10, c=args.c)
+
+    def forward(self, x):
+        x = self.tp(x)
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(-1, 4 * 4 * 50)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(self.mlr(x, c=self.tp.c), dim=-1)
 
 def train(args, model, device, train_loader, optimizer, epoch):
     model.train()
@@ -68,6 +137,8 @@ def test(args, model, device, test_loader):
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
+    
+    return 100. * correct / len(test_loader.dataset)
 
 
 def main():
@@ -96,7 +167,7 @@ def main():
     parser.add_argument('--train_x', action='store_true', default=False, help='train the exponential map origin')
     parser.add_argument('--train_c', action='store_true', default=False, help='train the Poincare ball curvature')
 
-
+    parser.add_argument('--model_type', type=str, default='net', help='netregular | netkhrulkov | nethypconv | nethypconv2')
 
 
     args = parser.parse_args()
@@ -107,6 +178,7 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+
     train_loader = torch.utils.data.DataLoader(
         datasets.MNIST('../data', train=True, download=True,
                        transform=transforms.Compose([
@@ -121,12 +193,25 @@ def main():
         ])),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
-    model = Net(args).to(device)
+    model = None
+    if args.model_type.lower() == 'netregular':
+        model = NetRegular(args).to(device)
+    elif args.model_type.lower() == 'netkhrulkov':
+        model = NetKhrulkov(args).to(device)
+    elif args.model_type.lower() == 'nethypconv':
+        model = NetHypConv(args).to(device)
+    elif args.model_type.lower() == 'nethypconv2':
+        model = NetHypConv2(args).to(device)
+
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+    test_history = []
     for epoch in range(1, args.epochs + 1):
         train(args, model, device, train_loader, optimizer, epoch)
-        test(args, model, device, test_loader)
+        acc = test(args, model, device, test_loader)
+        test_history.append(acc)
+        
+    print(test_history)
 
     if (args.save_model):
         torch.save(model.state_dict(), "mnist_cnn.pt")

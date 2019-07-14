@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from dataloader.samplers import CategoriesSampler
-from models.protonet import ProtoNet
+from models.protonet import ProtoNet, HypNet
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from utils import pprint, set_gpu, ensure_path, Averager, Timer, count_acc, compute_confidence_interval
@@ -31,6 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr_decay', type=bool, default=True)
     parser.add_argument('--train_c', action='store_true', default=False)
     parser.add_argument('--train_x', action='store_true', default=False)
+    parser.add_argument('--model_type', type=str, default='protonet', help='protonet | hypnet')
     args = parser.parse_args()
     pprint(vars(args))
 
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     set_gpu(args.gpu)
 
     if args.save_path is None:
-        save_path1 = '-'.join([args.dataset, 'ProtoNet'])
+        save_path1 = '-'.join([args.dataset, args.model_type])
         save_path2 = '_'.join([str(args.shot), str(args.query), str(args.way), str(args.validation_way),
                                str(args.step_size), str(args.gamma), str(args.lr),
                                str(args.temperature), str(args.hyperbolic), str(args.dim), str(args.c)[:5], str(args.train_c),
@@ -65,7 +66,12 @@ if __name__ == '__main__':
     val_sampler = CategoriesSampler(valset.label, 500, args.validation_way, args.shot + args.query)
     val_loader = DataLoader(dataset=valset, batch_sampler=val_sampler, num_workers=8, pin_memory=True)
 
-    model = ProtoNet(args)
+
+    model = None
+    if args.model_type.lower() == 'protonet':
+        model = ProtoNet(args)
+    elif args.model_type.lower() == 'hypnet':
+        model = HypNet(args)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -227,3 +233,6 @@ if __name__ == '__main__':
     m, pm = compute_confidence_interval(test_acc_record)
     print('Val Best Acc {:.4f}, Test Acc {:.4f}'.format(trlog['max_acc'], ave_acc.item()))
     print('Test Acc {:.4f} + {:.4f}'.format(m, pm))
+    
+    print(trlog)
+
