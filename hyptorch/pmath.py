@@ -51,7 +51,7 @@ def arcosh(x, eps=1e-5):  # pragma: no cover
     return torch.log(x + torch.sqrt(1 + x) * torch.sqrt(x - 1))
 
 
-def project(x, *, c=1.0):
+def project(x, *, c=1.0, flag=None):
     r"""
     Safe projection on the manifold for numerical stability. This was mentioned in [1]_
     Parameters
@@ -70,13 +70,16 @@ def project(x, *, c=1.0):
         https://arxiv.org/abs/1805.09112
     """
     c = torch.as_tensor(c).type_as(x)
-    return _project(x, c)
+    return _project(x, c, flag)
 
 
-def _project(x, c):
+def _project(x, c, flag=None):
     norm = torch.clamp_min(x.norm(dim=-1, keepdim=True, p=2), 1e-5)
     maxnorm = (1 - 1e-3) / (c ** 0.5)
     cond = norm > maxnorm
+
+    if flag == 'printcondsum':
+        print(f'cond: {sum(sum(sum(cond)))}')
     projected = x / norm * maxnorm
     return torch.where(cond, projected, x)
 

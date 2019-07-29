@@ -121,12 +121,14 @@ class HypLinear2(nn.Module):
 
 # hyperbolic conv via doing regular conv in exp-log wrapper, 
 # and isolating bias to be in H^n
+# normalization = "vector" | "perchannel"
 class HypConv(nn.Module):
-    def __init__(self, in_channels, out_channels, ker_size, c, bias=True, padding=0):
+    def __init__(self, in_channels, out_channels, ker_size, c, bias=True, padding=0, normalization='vector'):
         super(HypConv, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.c = c
+        self.normalization = normalization
         self.conv = nn.Conv2d(in_channels, out_channels, ker_size, bias=False, padding=padding)
         if bias:
             self.bias = nn.Parameter(torch.Tensor(out_channels))
@@ -159,7 +161,15 @@ class HypConv(nn.Module):
             # print dimensions
 #             print(out.size())
 #             print(bias.size())
-            return pmath.project(pmath.mobius_add(out, bias), c=c)
+            # conventional vector normalization
+            interm = pmath.mobius_add(out, bias)
+            normed = None
+            if self.normalization == 'vector':
+#                 print('doing vector normalization!')
+                normed = pmath.project(interm.view(interm.size(0), -1), c=c).view(interm.size())
+            else:
+                normed = pmath.project(interm.view(interm.size(0) * interm.size(1), -1), c=c).view(interm.size())
+            return normed
 
 
     def extra_repr(self):
@@ -203,6 +213,91 @@ class HypConv2(nn.Module):
         return 'in_features={}, out_features={}, bias={}, c={}'.format(
             self.in_features, self.out_features, self.bias is not None, self.c
         )
+
+    
+# convolves a m x m channel with a k x k kernel
+# to produce a (m-k+1) x (m-k+1) output 
+# (currently assumes NO padding)
+def ker_by_channel(channel, ker):
+    pass
+
+# convolves each of c_in channels (of dim m x m) with the
+# respective c_in(th) k x k kernel to produce first a set of
+# c_in (m-k+1) x (m-k+1) ouput channels that are then
+# added gyrovectors to produce a single (m-k+1) x (m-k+1) output
+# "vector"
+# channels: c_in x m x m
+# kers: c_in x k x k
+def kers_by_channels(channels, kers):
+    pass
+
+# convolves each of the c_out kers_full_weight kernel volumes
+# with channels, thereby producing c_out volumes of
+# dimension c_in x (m-k+1) x (m-k+1)
+# channels: c_in x m x m
+# kers_full_weight: c_out x c_in x k x k
+def full_conv(channels, kers_full_weight)
+    pass
+
+# hyperbolic conv via explicit doubly blocked circulant matrix kernel
+# multiplication, viewing each output channel as a vector
+class HypConv3(nn.Module):
+    def __init__(self, in_channels, out_channels, ker_size, c, bias=True, padding=0, normalization='perchannel'):
+        super(HypConv, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.c = c
+        self.normalization = normalization
+        self.weight = nn.Parameter(torch.Tensor(out_channels, in_channels, ker_size, ker_size))
+        # todo: implement non-zero padding
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(out_channels))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+
+    def reset_parameters(self):
+        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.conv.weight)
+            bound = 1 / math.sqrt(fan_in)
+            init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, x, c=None):
+        if c is None:
+            c = self.c
+
+        # do cast back x to R^n, do conv, then cast the result back to H space
+        x = pmath.logmap0(x, c=c)
+        out = self.conv(x)
+        out = pmath.expmap0(out, c=c)
+
+        # now add the H^n bias
+        if self.bias is None:
+            return pmath.project(out, c=c)
+        else:
+            bias = pmath.expmap0(self.bias, c=c)
+            bias = bias.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(out)
+            # print dimensions
+#             print(out.size())
+#             print(bias.size())
+            # conventional vector normalization
+            interm = pmath.mobius_add(out, bias)
+            normed = None
+            if self.normalization == 'vector':
+#                 print('doing vector normalization!')
+                normed = pmath.project(interm.view(interm.size(0), -1), c=c).view(interm.size())
+            else:
+                normed = pmath.project(interm.view(interm.size(0) * interm.size(1), -1), c=c).view(interm.size())
+            return normed
+
+
+    def extra_repr(self):
+        return 'in_features={}, out_features={}, bias={}, c={}'.format(
+            self.in_features, self.out_features, self.bias is not None, self.c
+        )
+
     
 class ConcatPoincareLayer(nn.Module):
     def __init__(self, d1, d2, d_out, c):

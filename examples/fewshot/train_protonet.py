@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from dataloader.samplers import CategoriesSampler
-from models.protonet import ProtoNet, HypNet
+from models.protonet import ProtoNet, HypNet, ProtoNetWithHyperbolic
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from utils import pprint, set_gpu, ensure_path, Averager, Timer, count_acc, compute_confidence_interval
@@ -31,7 +31,9 @@ if __name__ == '__main__':
     parser.add_argument('--lr_decay', type=bool, default=True)
     parser.add_argument('--train_c', action='store_true', default=False)
     parser.add_argument('--train_x', action='store_true', default=False)
-    parser.add_argument('--model_type', type=str, default='protonet', help='protonet | hypnet')
+    parser.add_argument('--model_type', type=str, default='protonet', help='protonet | hypnet | protonetwithhyperbolic')
+    parser.add_argument('--exp_addendum', type=str, default='myexp', help='add experiment name')
+    parser.add_argument('--normalization', type=str, default='vector', help='conv normalization, vector | perchannel')
     args = parser.parse_args()
     pprint(vars(args))
 
@@ -45,7 +47,7 @@ if __name__ == '__main__':
                                str(args.step_size), str(args.gamma), str(args.lr),
                                str(args.temperature), str(args.hyperbolic), str(args.dim), str(args.c)[:5], str(args.train_c),
                                str(args.train_x)])
-        args.save_path = save_path1 + '_' + save_path2
+        args.save_path = save_path1 + '_' + save_path2 + '_' + args.exp_addendum
         ensure_path(args.save_path)
     else:
         ensure_path(args.save_path)
@@ -72,6 +74,8 @@ if __name__ == '__main__':
         model = ProtoNet(args)
     elif args.model_type.lower() == 'hypnet':
         model = HypNet(args)
+    elif args.model_type.lower() == 'protonetwithhyperbolic':
+        model = ProtoNetWithHyperbolic(args)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -202,9 +206,9 @@ if __name__ == '__main__':
     # Test Phase
     trlog = torch.load(osp.join(args.save_path, 'trlog'))
     test_set = Dataset('test', args)
-    sampler = CategoriesSampler(test_set.label, 10000, args.validation_way, args.shot + args.query)
+    sampler = CategoriesSampler(test_set.label, 1000, args.validation_way, args.shot + args.query)
     loader = DataLoader(test_set, batch_sampler=sampler, num_workers=8, pin_memory=True)
-    test_acc_record = np.zeros((10000,))
+    test_acc_record = np.zeros((1000,))
 
     model.load_state_dict(torch.load(osp.join(args.save_path, 'max_acc' + '.pth'))['params'])
     model.eval()
