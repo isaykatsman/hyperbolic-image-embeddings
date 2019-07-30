@@ -123,7 +123,7 @@ class HypLinear2(nn.Module):
 # and isolating bias to be in H^n
 # normalization = "vector" | "perchannel"
 class HypConv(nn.Module):
-    def __init__(self, in_channels, out_channels, ker_size, c, bias=True, padding=0, normalization='vector'):
+    def __init__(self, in_channels, out_channels, ker_size, c, bias=True, padding=0, normalization='perchannel'):
         super(HypConv, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -148,13 +148,13 @@ class HypConv(nn.Module):
             c = self.c
 
         # do cast back x to R^n, do conv, then cast the result back to H space
-        x = pmath.logmap0(x, c=c)
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
         out = self.conv(x)
-        out = pmath.expmap0(out, c=c)
+        out = pmath.logmap0(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
 
         # now add the H^n bias
         if self.bias is None:
-            return pmath.project(out, c=c)
+            return pmath.project(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
         else:
             bias = pmath.expmap0(self.bias, c=c)
             bias = bias.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(out)
@@ -162,13 +162,8 @@ class HypConv(nn.Module):
 #             print(out.size())
 #             print(bias.size())
             # conventional vector normalization
-            interm = pmath.mobius_add(out, bias)
-            normed = None
-            if self.normalization == 'vector':
-#                 print('doing vector normalization!')
-                normed = pmath.project(interm.view(interm.size(0), -1), c=c).view(interm.size())
-            else:
-                normed = pmath.project(interm.view(interm.size(0) * interm.size(1), -1), c=c).view(interm.size())
+            interm = pmath.mobius_add(out.contiguous().view(out.size(0) * out.size(1), -1), bias.contiguous().view(bias.size(0) * bias.size(1), -1), c=c).view(out.size())
+            normed = pmath.project(interm.view(interm.size(0) * interm.size(1), -1), c=c).view(interm.size())
             return normed
 
 
@@ -218,38 +213,96 @@ class HypConv2(nn.Module):
 # convolves a m x m channel with a k x k kernel
 # to produce a (m-k+1) x (m-k+1) output 
 # (currently assumes NO padding)
-def ker_by_channel(channel, ker):
-    pass
+# channel: m x m
+# ker: k x k
+def ker_by_channel(channel, ker, c=None, padding=0):
+    channel = nn.ConstantPad2d(padding, 0)(channel)
+    m1, m2 = channel.size()
+    k, _ = ker.size() # assumes square kernel
+    channel_v = channel.view(-1)
+    dbl_circulant = torch.zeros((m1-k+1) * (m2-k+1), m1 * m2).cuda()
+
+    shift = 0 # controls shift when convolution switches to new row
+    for i in range(dbl_circulant.size(0)):
+
+        ker_flat = ker.view(-1)
+        row = torch.zeros(m1 * m2).cuda()
+
+        ix = 0
+        for j in range(i + shift, dbl_circulant.size(1)):
+            if (j-shift-i) % (m2) < k and ix <= ker_flat.size(0) - 1:
+                row[j] = ker_flat[ix]
+                ix += 1
+
+        # (shift is k-1 every m2-k+1 rows)
+        if (i+1) % (m2-k+1) == 0:
+            shift += k-1
+
+        # load a row
+        dbl_circulant[i] = row
+
+#     return dbl_circulant, channel_v
+    # bug test version
+#     return dbl_circulant @ channel_v
+
+    # now have a doubly blocked circulant matrix for convolution
+    # perform matrix vector in hyp space
+    return pmath.project(pmath.mobius_matvec(dbl_circulant, channel_v, c=c), c=c) #pmath.mobius_matvec(self.weight, x, c=c), c=c)
+
 
 # convolves each of c_in channels (of dim m x m) with the
 # respective c_in(th) k x k kernel to produce first a set of
 # c_in (m-k+1) x (m-k+1) ouput channels that are then
 # added gyrovectors to produce a single (m-k+1) x (m-k+1) output
 # "vector"
-# channels: c_in x m x m
-# kers: c_in x k x k
-def kers_by_channels(channels, kers):
-    pass
+# Inputs:
+#   channels: c_in x m1 x m2
+#   kers: c_in x k x k
+# Output:
+#   out_mat: (m-k+1) x (m-k+1)
+def kers_by_channels(channels, kers, c=None, padding=0):
+    c_in, m1, m2 = channels.size()
+    k = kers.size(1)
+    out_mat = torch.zeros(m1-k+1 + 2*padding, m2-k+1 + 2*padding).view(-1).cuda()
+    for i in range(c_in):
+        temp_ker = ker_by_channel(channels[i, :, :], kers[i, :, :], c=c, padding=padding).view(-1) # temp_ker = in final version
+#         out_mat = out_mat + temp_ker # for regular euclidean conv
+        out_mat = pmath.mobius_add(out_mat, temp_ker, c=c) # final version
+        out_mat = pmath.project(out_mat, c=c) # final version
+
+    out_mat = out_mat.view(m1-k+1 + 2*padding, m2-k+1 + 2*padding)
+    return out_mat
 
 # convolves each of the c_out kers_full_weight kernel volumes
 # with channels, thereby producing c_out volumes of
-# dimension c_in x (m-k+1) x (m-k+1)
-# channels: c_in x m x m
-# kers_full_weight: c_out x c_in x k x k
-def full_conv(channels, kers_full_weight)
-    pass
+# dimension (m-k+1) x (m-k+1)
+# Inputs:
+#   channels: bs x c_in x m x m
+#   kers_full_weight: c_out x c_in x k x k
+# Output:
+#   out_mat: bs x c_out x (m-k+1) x (m-k+1)
+def full_conv(channels, kers_full_weight, c=None, padding=0):
+    bs, c_in, m1, m2 = channels.size()
+    c_out, _, _, k = kers_full_weight.size()
+    out_mat = torch.zeros(bs, c_out, m1-k+1 + 2*padding, m2-k+1 + 2*padding).cuda()
+    for b in range(bs):
+        for i in range(c_out):
+            temp_ker = kers_by_channels(channels[b], kers_full_weight[i, :, :, :], c=c, padding=padding)
+            out_mat[b, i, :, :] = temp_ker
+
+    return out_mat
 
 # hyperbolic conv via explicit doubly blocked circulant matrix kernel
 # multiplication, viewing each output channel as a vector
 class HypConv3(nn.Module):
     def __init__(self, in_channels, out_channels, ker_size, c, bias=True, padding=0, normalization='perchannel'):
-        super(HypConv, self).__init__()
+        super(HypConv3, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.c = c
         self.normalization = normalization
+        self.padding = padding
         self.weight = nn.Parameter(torch.Tensor(out_channels, in_channels, ker_size, ker_size))
-        # todo: implement non-zero padding
         if bias:
             self.bias = nn.Parameter(torch.Tensor(out_channels))
         else:
@@ -260,7 +313,7 @@ class HypConv3(nn.Module):
     def reset_parameters(self):
         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         if self.bias is not None:
-            fan_in, _ = init._calculate_fan_in_and_fan_out(self.conv.weight)
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
 
@@ -269,13 +322,13 @@ class HypConv3(nn.Module):
             c = self.c
 
         # do cast back x to R^n, do conv, then cast the result back to H space
-        x = pmath.logmap0(x, c=c)
-        out = self.conv(x)
-        out = pmath.expmap0(out, c=c)
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        out = full_conv(x, self.weight, c=c, padding=self.padding)
+        out = pmath.logmap0(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
 
         # now add the H^n bias
         if self.bias is None:
-            return pmath.project(out, c=c)
+            return pmath.project(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
         else:
             bias = pmath.expmap0(self.bias, c=c)
             bias = bias.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(out)
@@ -283,13 +336,8 @@ class HypConv3(nn.Module):
 #             print(out.size())
 #             print(bias.size())
             # conventional vector normalization
-            interm = pmath.mobius_add(out, bias)
-            normed = None
-            if self.normalization == 'vector':
-#                 print('doing vector normalization!')
-                normed = pmath.project(interm.view(interm.size(0), -1), c=c).view(interm.size())
-            else:
-                normed = pmath.project(interm.view(interm.size(0) * interm.size(1), -1), c=c).view(interm.size())
+            interm = pmath.mobius_add(out.contiguous().view(out.size(0) * out.size(1), -1), bias.contiguous().view(bias.size(0) * bias.size(1), -1), c=c).view(out.size())
+            normed = pmath.project(interm.view(interm.size(0) * interm.size(1), -1), c=c).view(interm.size())
             return normed
 
 

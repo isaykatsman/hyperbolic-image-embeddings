@@ -60,6 +60,7 @@ if __name__ == '__main__':
     else:
         raise ValueError('Non-supported Dataset.')
 
+    # train n_batch is 100 by default, val n_batch is 500 by default
     trainset = Dataset('train', args)
     train_sampler = CategoriesSampler(trainset.label, 100, args.way, args.shot + args.query)
     train_loader = DataLoader(dataset=trainset, batch_sampler=train_sampler, num_workers=8, pin_memory=True)
