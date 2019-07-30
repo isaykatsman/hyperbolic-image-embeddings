@@ -150,7 +150,7 @@ class HypConv(nn.Module):
         # do cast back x to R^n, do conv, then cast the result back to H space
         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
         out = self.conv(x)
-        out = pmath.logmap0(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
+        out = pmath.expmap0(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
 
         # now add the H^n bias
         if self.bias is None:
@@ -324,7 +324,7 @@ class HypConv3(nn.Module):
         # do cast back x to R^n, do conv, then cast the result back to H space
         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
         out = full_conv(x, self.weight, c=c, padding=self.padding)
-        out = pmath.logmap0(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
+        out = pmath.expmap0(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
 
         # now add the H^n bias
         if self.bias is None:

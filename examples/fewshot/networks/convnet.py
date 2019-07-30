@@ -39,16 +39,16 @@ class HypConvNetEncoder(nn.Module):
 
         print('getting here')
 
-        self.c1 = hypnn.HypConv3(x_dim, hid_dim, 3, c, padding=1, normalization=normalization)
+        self.c1 = hypnn.HypConv(x_dim, hid_dim, 3, c, padding=1, normalization=normalization)
 #         self.b1 = nn.BatchNorm2d(hid_dim)
         # relu and maxpool(2) on forward pass
-        self.c2 = hypnn.HypConv3(hid_dim, hid_dim, 3, c, padding=1, normalization=normalization)
+        self.c2 = hypnn.HypConv(hid_dim, hid_dim, 3, c, padding=1, normalization=normalization)
 #         self.b2 = nn.BatchNorm2d(hid_dim)
         # relu and maxpool(2) on forward pass
-        self.c3 = hypnn.HypConv3(hid_dim, hid_dim, 3, c, padding=1, normalization=normalization)
+        self.c3 = hypnn.HypConv(hid_dim, hid_dim, 3, c, padding=1, normalization=normalization)
 #         self.b3 = nn.BatchNorm2d(hid_dim)
         # relu and maxpool(2) on forward pass
-        self.c4 = hypnn.HypConv3(hid_dim, z_dim, 3, c, padding=1, normalization=normalization)
+        self.c4 = hypnn.HypConv(hid_dim, z_dim, 3, c, padding=1, normalization=normalization)
 #         self.b4 = nn.BatchNorm2d(z_dim)
 
     def forward(self, x, c=None):
@@ -95,86 +95,86 @@ class HypConvNetEncoder(nn.Module):
         x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 #         print(f'x after pool project the same: {xbpp.equal(x)}')
 
-#         # BLOCK 2
+        # BLOCK 2
 
-#         x = self.c2(x, c=c)
-#         # batch norm
-# #         x = pmath.logmap0(x, c=c)
-# #         x = self.b2(x)
-# #         x = pmath.expmap0(x, c=c)
-# #         x = pmath.project(x, c=c)
+        x = self.c2(x, c=c)
+        # batch norm
+#         x = pmath.logmap0(x, c=c)
+#         x = self.b2(x)
+#         x = pmath.expmap0(x, c=c)
+#         x = pmath.project(x, c=c)
 
-#         # blocked relu and maxpool 2
-# #         x = pmath.logmap0(x, c=c)
-# #         x = nn.ReLU()(x)
-# #         x = nn.MaxPool2d(2)(x)
-# #         x = pmath.expmap0(x, c=c)
-# #         x = pmath.project(x, c=c)
-
-#         # separate relu and maxpool 2
-#         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        # blocked relu and maxpool 2
+#         x = pmath.logmap0(x, c=c)
 #         x = nn.ReLU()(x)
-#         x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-#         x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-
-#         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 #         x = nn.MaxPool2d(2)(x)
-#         x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-#         x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+#         x = pmath.expmap0(x, c=c)
+#         x = pmath.project(x, c=c)
 
-#         # BLOCK 3
+        # separate relu and maxpool 2
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = nn.ReLU()(x)
+        x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 
-#         x = self.c3(x, c=c)
-#         # batch norm
-# #         x = pmath.logmap0(x, c=c)
-# #         x = self.b3(x)
-# #         x = pmath.expmap0(x, c=c)
-# #         x = pmath.project(x, c=c)
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = nn.MaxPool2d(2)(x)
+        x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 
-#         # blocked relu and maxpool 2
-# #         x = pmath.logmap0(x, c=c)
-# #         x = nn.ReLU()(x)
-# #         x = nn.MaxPool2d(2)(x)
-# #         x = pmath.expmap0(x, c=c)
-# #         x = pmath.project(x, c=c)
+        # BLOCK 3
 
-#         # separate relu and maxpool 2
-#         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = self.c3(x, c=c)
+        # batch norm
+#         x = pmath.logmap0(x, c=c)
+#         x = self.b3(x)
+#         x = pmath.expmap0(x, c=c)
+#         x = pmath.project(x, c=c)
+
+        # blocked relu and maxpool 2
+#         x = pmath.logmap0(x, c=c)
 #         x = nn.ReLU()(x)
-#         x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-#         x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-
-#         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 #         x = nn.MaxPool2d(2)(x)
-#         x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-#         x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+#         x = pmath.expmap0(x, c=c)
+#         x = pmath.project(x, c=c)
 
-#         # BLOCK 4
+        # separate relu and maxpool 2
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = nn.ReLU()(x)
+        x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 
-#         x = self.c4(x, c=c)
-#         # batch norm
-# #         x = pmath.logmap0(x, c=c)
-# #         x = self.b4(x)
-# #         x = pmath.expmap0(x, c=c)
-# #         x = pmath.project(x, c=c)
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = nn.MaxPool2d(2)(x)
+        x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 
-#         # blocked relu and maxpool 2
-# #         x = pmath.logmap0(x, c=c)
-# #         x = nn.ReLU()(x)
-# #         x = nn.MaxPool2d(2)(x)
-# #         x = pmath.expmap0(x, c=c)
-# #         x = pmath.project(x, c=c)
+        # BLOCK 4
 
-#         # separate relu and maxpool 2
-#         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = self.c4(x, c=c)
+        # batch norm
+#         x = pmath.logmap0(x, c=c)
+#         x = self.b4(x)
+#         x = pmath.expmap0(x, c=c)
+#         x = pmath.project(x, c=c)
+
+        # blocked relu and maxpool 2
+#         x = pmath.logmap0(x, c=c)
 #         x = nn.ReLU()(x)
-#         x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-#         x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-
-#         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 #         x = nn.MaxPool2d(2)(x)
-#         x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-#         x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+#         x = pmath.expmap0(x, c=c)
+#         x = pmath.project(x, c=c)
+
+        # separate relu and maxpool 2
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = nn.ReLU()(x)
+        x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = nn.MaxPool2d(2)(x)
+        x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 
         # final pool
         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())

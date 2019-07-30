@@ -46,8 +46,8 @@ class CUB(Dataset):
         
         # default image size: 84 (for both resize and center crop)
         self.transform = transforms.Compose([
-            transforms.Resize(21, interpolation = PIL.Image.BICUBIC),
-            transforms.CenterCrop(21),
+            transforms.Resize(84, interpolation = PIL.Image.BICUBIC),
+            transforms.CenterCrop(84),
             transforms.ToTensor(),
             normalize])
 
