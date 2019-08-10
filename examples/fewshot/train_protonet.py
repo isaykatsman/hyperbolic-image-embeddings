@@ -34,6 +34,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', type=str, default='protonet', help='protonet | hypnet | protonetwithhyperbolic')
     parser.add_argument('--exp_addendum', type=str, default='myexp', help='add experiment name')
     parser.add_argument('--normalization', type=str, default='vector', help='conv normalization, vector | perchannel')
+    parser.add_argument('--enc', type=str, default='hypconvnet', help='hypconvnet | hypconvnetonlyhypbias')
+
     args = parser.parse_args()
     pprint(vars(args))
 

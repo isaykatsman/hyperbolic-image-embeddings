@@ -7,7 +7,7 @@ from hyptorch.pmath import poincare_mean, dist_matrix
 sys.path.append(os.path.dirname(os.getcwd()))
 import torch.nn as nn
 from utils import euclidean_metric
-from networks.convnet import ConvNet, HypConvNetEncoder, EncoderWithSomeHyperbolic
+from networks.convnet import ConvNet, HypConvNetEncoder, EncoderWithSomeHyperbolic, HypConvNetEncoderOnlyHypBias
 
 
 class ProtoNet(nn.Module):
@@ -46,7 +46,10 @@ class HypNet(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self.encoder = HypConvNetEncoder(c=args.c, z_dim=args.dim, normalization=args.normalization)
+        if self.args.enc == 'hypconvnet':
+            self.encoder = HypConvNetEncoder(c=args.c, z_dim=args.dim, normalization=args.normalization)
+        elif self.args.enc == 'hypconvnetonlyhypbias':
+            self.encoder = HypConvNetEncoderOnlyHypBias(c=args.c, z_dim=args.dim, normalization=args.normalization)
 
         if args.hyperbolic:
             self.e2p = ToPoincare(c=args.c, train_c=args.train_c, train_x=args.train_x)
@@ -75,7 +78,7 @@ class HypNet(nn.Module):
 
             logits = euclidean_metric(self.encoder(data_query), proto) / self.args.temperature
         return logits
-    
+
 class ProtoNetWithHyperbolic(nn.Module):
     def __init__(self, args):
         super().__init__()

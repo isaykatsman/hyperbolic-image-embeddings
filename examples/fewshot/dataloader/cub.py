@@ -27,13 +27,13 @@ class CUB(Dataset):
 
         for l in lines:
             context = l.split(',')
-            name = context[0] 
+            name = context[0]
             wnid = context[1]
             path = osp.join(IMAGE_PATH, name)
             if wnid not in self.wnids:
                 self.wnids.append(wnid)
                 lb += 1
-                
+
             data.append(path)
             label.append(lb)
 
@@ -43,8 +43,8 @@ class CUB(Dataset):
 
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
-        
-        # default image size: 84 (for both resize and center crop)
+
+        # default image size: 84 (for both resize and center crop), previously used 12
         self.transform = transforms.Compose([
             transforms.Resize(84, interpolation = PIL.Image.BICUBIC),
             transforms.CenterCrop(84),
@@ -57,5 +57,5 @@ class CUB(Dataset):
     def __getitem__(self, i):
         path, label = self.data[i], self.label[i]
         image = self.transform(Image.open(path).convert('RGB'))
-        return image, label            
+        return image, label
 

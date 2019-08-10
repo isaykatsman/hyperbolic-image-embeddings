@@ -209,7 +209,6 @@ class HypConv2(nn.Module):
             self.in_features, self.out_features, self.bias is not None, self.c
         )
 
-    
 # convolves a m x m channel with a k x k kernel
 # to produce a (m-k+1) x (m-k+1) output 
 # (currently assumes NO padding)
@@ -217,38 +216,12 @@ class HypConv2(nn.Module):
 # ker: k x k
 def ker_by_channel(channel, ker, c=None, padding=0):
     channel = nn.ConstantPad2d(padding, 0)(channel)
-    m1, m2 = channel.size()
-    k, _ = ker.size() # assumes square kernel
-    channel_v = channel.view(-1)
-    dbl_circulant = torch.zeros((m1-k+1) * (m2-k+1), m1 * m2).cuda()
-
-    shift = 0 # controls shift when convolution switches to new row
-    for i in range(dbl_circulant.size(0)):
-
-        ker_flat = ker.view(-1)
-        row = torch.zeros(m1 * m2).cuda()
-
-        ix = 0
-        for j in range(i + shift, dbl_circulant.size(1)):
-            if (j-shift-i) % (m2) < k and ix <= ker_flat.size(0) - 1:
-                row[j] = ker_flat[ix]
-                ix += 1
-
-        # (shift is k-1 every m2-k+1 rows)
-        if (i+1) % (m2-k+1) == 0:
-            shift += k-1
-
-        # load a row
-        dbl_circulant[i] = row
-
-#     return dbl_circulant, channel_v
-    # bug test version
-#     return dbl_circulant @ channel_v
-
-    # now have a doubly blocked circulant matrix for convolution
-    # perform matrix vector in hyp space
-    return pmath.project(pmath.mobius_matvec(dbl_circulant, channel_v, c=c), c=c) #pmath.mobius_matvec(self.weight, x, c=c), c=c)
-
+    kernel_size, _ = ker.size()
+    channel = pmath.logmap0(channel.view(-1), c=c).view(channel.size())
+    channel = nn.functional.conv2d(channel.unsqueeze(0).unsqueeze(0), ker.unsqueeze(0).unsqueeze(0), bias=None).view(-1)
+    channel = pmath.expmap0(channel.view(-1), c=c).view(channel.size())
+    channel = pmath.project(channel.view(-1), c=c).view(channel.size())
+    return channel
 
 # convolves each of c_in channels (of dim m x m) with the
 # respective c_in(th) k x k kernel to produce first a set of
@@ -266,11 +239,11 @@ def kers_by_channels(channels, kers, c=None, padding=0):
     out_mat = torch.zeros(m1-k+1 + 2*padding, m2-k+1 + 2*padding).view(-1).cuda()
     for i in range(c_in):
         temp_ker = ker_by_channel(channels[i, :, :], kers[i, :, :], c=c, padding=padding).view(-1) # temp_ker = in final version
-#         out_mat = out_mat + temp_ker # for regular euclidean conv
         out_mat = pmath.mobius_add(out_mat, temp_ker, c=c) # final version
         out_mat = pmath.project(out_mat, c=c) # final version
 
     out_mat = out_mat.view(m1-k+1 + 2*padding, m2-k+1 + 2*padding)
+
     return out_mat
 
 # convolves each of the c_out kers_full_weight kernel volumes
@@ -322,9 +295,9 @@ class HypConv3(nn.Module):
             c = self.c
 
         # do cast back x to R^n, do conv, then cast the result back to H space
-        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+#         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
         out = full_conv(x, self.weight, c=c, padding=self.padding)
-        out = pmath.expmap0(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
+#         out = pmath.expmap0(out.view(out.size(0) * out.size(1), -1), c=c).view(out.size())
 
         # now add the H^n bias
         if self.bias is None:
