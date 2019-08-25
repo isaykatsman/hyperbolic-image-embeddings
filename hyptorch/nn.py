@@ -209,20 +209,6 @@ class HypConv2(nn.Module):
             self.in_features, self.out_features, self.bias is not None, self.c
         )
 
-# convolves a m x m channel with a k x k kernel
-# to produce a (m-k+1) x (m-k+1) output 
-# (currently assumes NO padding)
-# channel: m x m
-# ker: k x k
-def ker_by_channel(channel, ker, c=None, padding=0):
-    channel = nn.ConstantPad2d(padding, 0)(channel)
-    kernel_size, _ = ker.size()
-    channel = pmath.logmap0(channel.view(-1), c=c).view(channel.size())
-    channel = nn.functional.conv2d(channel.unsqueeze(0).unsqueeze(0), ker.unsqueeze(0).unsqueeze(0), bias=None).view(-1)
-    channel = pmath.expmap0(channel.view(-1), c=c).view(channel.size())
-    channel = pmath.project(channel.view(-1), c=c).view(channel.size())
-    return channel
-
 # convolves each of c_in channels (of dim m x m) with the
 # respective c_in(th) k x k kernel to produce first a set of
 # c_in (m-k+1) x (m-k+1) ouput channels that are then
@@ -233,18 +219,33 @@ def ker_by_channel(channel, ker, c=None, padding=0):
 #   kers: c_in x k x k
 # Output:
 #   out_mat: (m-k+1) x (m-k+1)
-def kers_by_channels(channels, kers, c=None, padding=0):
-    c_in, m1, m2 = channels.size()
-    k = kers.size(1)
-    out_mat = torch.zeros(m1-k+1 + 2*padding, m2-k+1 + 2*padding).view(-1).cuda()
-    for i in range(c_in):
-        temp_ker = ker_by_channel(channels[i, :, :], kers[i, :, :], c=c, padding=padding).view(-1) # temp_ker = in final version
-        out_mat = pmath.mobius_add(out_mat, temp_ker, c=c) # final version
-        out_mat = pmath.project(out_mat, c=c) # final version
+# def kers_by_channels(channels, kers, c=None, padding=0):
+#     c_in, m1, m2 = channels.size()
+#     k = kers.size(1)
+#     out_mat = torch.zeros(m1-k+1 + 2*padding, m2-k+1 + 2*padding).view(-1).cuda()
+#     for i in range(c_in):
+#         temp_ker = ker_by_channel(channels[i, :, :], kers[i, :, :], c=c, padding=padding).view(-1) # temp_ker = in final version
+#         out_mat = pmath.mobius_add(out_mat, temp_ker, c=c) # final version
+#         out_mat = pmath.project(out_mat, c=c) # final version
 
-    out_mat = out_mat.view(m1-k+1 + 2*padding, m2-k+1 + 2*padding)
+#     out_mat = out_mat.view(m1-k+1 + 2*padding, m2-k+1 + 2*padding)
 
-    return out_mat
+#     return out_mat
+
+# convolves a m x m channel with c_out k x k kernel
+# to produce a c_out x (m-k+1) x (m-k+1) output
+# channel: bs x m x m
+# ker: c_out x k x k
+# output: bs x c_out x (m-k+1)^2
+def ker_by_channel(channel, ker, c=None, padding=0):
+    channel = nn.ConstantPad2d(padding, 0)(channel)
+    c_out, kernel_size, _ = ker.size()
+    bs, m1, m2 = channel.size()
+    channel = pmath.logmap0(channel.view(bs, -1), c=c).view(bs, m1, m2)
+    channel = nn.functional.conv2d(channel.unsqueeze(1), ker.unsqueeze(1), bias=None).view(bs * c_out, -1)
+    channel = pmath.expmap0(channel, c=c)
+    channel = pmath.project(channel, c=c)
+    return channel
 
 # convolves each of the c_out kers_full_weight kernel volumes
 # with channels, thereby producing c_out volumes of
@@ -258,10 +259,20 @@ def full_conv(channels, kers_full_weight, c=None, padding=0):
     bs, c_in, m1, m2 = channels.size()
     c_out, _, _, k = kers_full_weight.size()
     out_mat = torch.zeros(bs, c_out, m1-k+1 + 2*padding, m2-k+1 + 2*padding).cuda()
-    for b in range(bs):
-        for i in range(c_out):
-            temp_ker = kers_by_channels(channels[b], kers_full_weight[i, :, :, :], c=c, padding=padding)
-            out_mat[b, i, :, :] = temp_ker
+    orig_size = out_mat.size()
+#     print(orig_size)
+#     print(out_mat.element_size() * out_mat.nelement())
+
+    out_mat = out_mat + 1 # no in place modification
+    out_mat[0] = out_mat[0] + 1 # in place modification
+
+#     for b in range(bs):
+        # todo: also try poincare mean to average c_in dimension
+    for j in range(c_in):
+        temp_ker = ker_by_channel(channels[:, j, :, :], kers_full_weight[:, j, :, :], c=c, padding=padding)
+        # temp_ker : c_out x (m-k+1)^2
+        out_mat = pmath.mobius_add(out_mat.view(bs * c_out, -1), temp_ker, c=c).view(orig_size)
+        out_mat = pmath.project(out_mat.view(bs * c_out, -1), c=c).view(orig_size)
 
     return out_mat
 
