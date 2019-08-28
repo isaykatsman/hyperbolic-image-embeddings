@@ -258,23 +258,18 @@ def ker_by_channel(channel, ker, c=None, padding=0):
 def full_conv(channels, kers_full_weight, c=None, padding=0):
     bs, c_in, m1, m2 = channels.size()
     c_out, _, _, k = kers_full_weight.size()
-    out_mat = torch.zeros(bs, c_out, m1-k+1 + 2*padding, m2-k+1 + 2*padding).cuda()
-    orig_size = out_mat.size()
-#     print(orig_size)
-#     print(out_mat.element_size() * out_mat.nelement())
+    out_mat = None # torch.zeros(bs, c_out, m1-k+1 + 2*padding, m2-k+1 + 2*padding).cuda()
 
-    out_mat = out_mat + 1 # no in place modification
-    out_mat[0] = out_mat[0] + 1 # in place modification
-
-#     for b in range(bs):
-        # todo: also try poincare mean to average c_in dimension
     for j in range(c_in):
         temp_ker = ker_by_channel(channels[:, j, :, :], kers_full_weight[:, j, :, :], c=c, padding=padding)
-        # temp_ker : c_out x (m-k+1)^2
-        out_mat = pmath.mobius_add(out_mat.view(bs * c_out, -1), temp_ker, c=c).view(orig_size)
-        out_mat = pmath.project(out_mat.view(bs * c_out, -1), c=c).view(orig_size)
+        # temp_ker : bs * c_out x (m-k+1)^2
+        if j == 0:
+            out_mat = temp_ker
+        else:
+            out_mat = pmath.mobius_add(out_mat, temp_ker, c=c)
+            out_mat = pmath.project(out_mat, c=c)
 
-    return out_mat
+    return out_mat.view(bs, c_out, m1-k+1 + 2 * padding, m2-k+1 + 2*padding)
 
 # hyperbolic conv via explicit doubly blocked circulant matrix kernel
 # multiplication, viewing each output channel as a vector

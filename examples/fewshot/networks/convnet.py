@@ -87,13 +87,13 @@ class HypConvNetEncoder(nn.Module):
 #         print(f'diff sum: {sum(sum(sum(xbrp[0]-x[0])))}')
 #         print(f'x after relu project the same: {xbrp.equal(x)}')
 
-#         x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-#         x = nn.MaxPool2d(2)(x)
-#         x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = pmath.logmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+        x = nn.MaxPool2d(2)(x)
+        x = pmath.expmap0(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
 
-# #         xbpp = x
-#         x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
-# #         print(f'x after pool project the same: {xbpp.equal(x)}')
+#         xbpp = x
+        x = pmath.project(x.view(x.size(0) * x.size(1), -1), c=c).view(x.size())
+#         print(f'x after pool project the same: {xbpp.equal(x)}')
 
 #         # BLOCK 2
 
@@ -368,10 +368,10 @@ class EncoderWithSomeHyperbolic(nn.Module):
         self.c2 = nn.Conv2d(hid_dim, hid_dim, 3, padding=1)
 #         self.b2 = nn.BatchNorm2d(hid_dim)
         # relu and maxpool(2) on forward pass
-        self.c3 = nn.Conv2d(hid_dim, hid_dim, 3, padding=1)
+        self.c3 = nn.Conv2d(hid_dim, 10, 3, padding=1) # hid_dim
 #         self.b3 = nn.BatchNorm2d(hid_dim)
         # relu and maxpool(2) on forward pass
-        self.c4 = hypnn.HypConv3(hid_dim, z_dim, 3, c, padding=1)
+        self.c4 = hypnn.HypConv3(10, 10, 3, c, padding=1) # hid_dim, z_dim
 #         self.b4 = nn.BatchNorm2d(z_dim)
 
         self.e2p = hypnn.ToPoincare(c=args.c, train_c=args.train_c, train_x=args.train_x)
